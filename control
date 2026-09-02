@@ -1,0 +1,9 @@
+Package: com.yourname.neteaseMusicClean
+Name: NeteaseMusicClean
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: 网易云音乐净化插件（诊断版）
+Maintainer: yourname <your@email.com>
+Author: yourname
+Section: Tweaks
+Depends: mobilesubstrate (>= 0.9.5000), firmware (>= 14.0)
