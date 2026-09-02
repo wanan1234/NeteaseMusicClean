@@ -1,6 +1,7 @@
 // =============================================================
-//  NeteaseMusicClean — 网易云音乐净化插件（诊断版 v2）
-//  延迟诊断，确保主界面已加载
+//  NeteaseMusicClean — 网易云音乐净化插件（诊断版）
+//  功能：打印视图层级，定位底部/顶部 Tab 及首页卡片类名
+//  手势：双指双击弹出菜单，可查看日志
 // =============================================================
 #import <UIKit/UIKit.h>
 #import <substrate.h>
@@ -128,70 +129,18 @@ static void diagnoseTabBarController(UIViewController *root) {
 }
 
 // =============================================================
-// Hook 主控制器（延迟诊断）
+// 双指双击菜单
 // =============================================================
-%hook NMRootNavigationController
-
-- (void)viewDidAppear:(BOOL)animated {
-    %orig;
-
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            WriteLog(@"========================================");
-            WriteLog(@"网易云音乐诊断版加载（延迟诊断）");
-            WriteLog(@"Bundle ID: %@", [[NSBundle mainBundle] bundleIdentifier]);
-            WriteLog(@"========================================");
-
-            // 诊断根视图
-            UIWindow *window = [UIApplication sharedApplication].windows.firstObject;
-            if (window && window.rootViewController) {
-                diagnoseTabBarController(window.rootViewController);
-                diagnoseNeteaseMusic(window.rootViewController);
-            }
-        });
+static void showToast(NSString *msg, UIWindow *window) {
+    UIViewController *top = window.rootViewController;
+    while (top.presentedViewController) top = top.presentedViewController;
+    UIAlertController *toast = [UIAlertController alertControllerWithTitle:nil message:msg preferredStyle:UIAlertControllerStyleAlert];
+    [top presentViewController:toast animated:YES completion:nil];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [toast dismissViewControllerAnimated:YES completion:nil];
     });
 }
 
-%end
-
-// =============================================================
-// Hook UIWindow：双指双击（增强穿透）
-// =============================================================
-%hook UIWindow
-
-- (instancetype)initWithFrame:(CGRect)frame {
-    self = %orig;
-    if (self) {
-        UITapGestureRecognizer *gesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(nm_handleDoubleTap:)];
-        gesture.numberOfTouchesRequired = 2;
-        gesture.numberOfTapsRequired = 2;
-        // 关键设置：不取消其他触摸事件，允许穿透
-        gesture.cancelsTouchesInView = NO;
-        gesture.delaysTouchesBegan = NO;
-        gesture.delaysTouchesEnded = NO;
-        [self addGestureRecognizer:gesture];
-        WriteLog(@"双指双击手势已添加到窗口");
-    }
-    return self;
-}
-
-%new
-- (void)nm_handleDoubleTap:(UITapGestureRecognizer *)gesture {
-    if (gesture.state == UIGestureRecognizerStateRecognized) {
-        WriteLog(@"双指双击手势触发");
-        if (@available(iOS 10.0, *)) {
-            [[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium] impactOccurred];
-        }
-        showSettingsMenu(self);
-    }
-}
-
-%end
-
-// =============================================================
-// 双指双击菜单
-// =============================================================
 static void showSettingsMenu(UIWindow *window) {
     UIViewController *topVC = window.rootViewController;
     while (topVC.presentedViewController) topVC = topVC.presentedViewController;
@@ -218,11 +167,65 @@ static void showSettingsMenu(UIWindow *window) {
 }
 
 // =============================================================
+// Hook 主控制器
+// =============================================================
+%hook UIViewController
+
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            WriteLog(@"========================================");
+            WriteLog(@"网易云音乐诊断版加载");
+            WriteLog(@"Bundle ID: %@", [[NSBundle mainBundle] bundleIdentifier]);
+            WriteLog(@"========================================");
+
+            // 诊断根视图
+            UIWindow *window = [UIApplication sharedApplication].windows.firstObject;
+            if (window && window.rootViewController) {
+                diagnoseTabBarController(window.rootViewController);
+                diagnoseNeteaseMusic(window.rootViewController);
+            }
+        });
+    });
+}
+
+%end
+
+// =============================================================
+// Hook UIWindow：双指双击
+// =============================================================
+%hook UIWindow
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = %orig;
+    if (self) {
+        UITapGestureRecognizer *gesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(nm_handleDoubleTap:)];
+        gesture.numberOfTouchesRequired = 2;
+        gesture.numberOfTapsRequired = 2;
+        [self addGestureRecognizer:gesture];
+        WriteLog(@"双指双击手势已添加");
+    }
+    return self;
+}
+%new
+- (void)nm_handleDoubleTap:(UITapGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateRecognized) {
+        if (@available(iOS 10.0, *)) {
+            [[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium] impactOccurred];
+        }
+        showSettingsMenu(self);
+    }
+}
+%end
+
+// =============================================================
 // 构造函数
 // =============================================================
 %ctor {
     WriteLog(@"========================================");
-    WriteLog(@"NeteaseMusicClean 诊断版 v2 加载");
+    WriteLog(@"NeteaseMusicClean 诊断版加载");
     WriteLog(@"Bundle ID: %@", [[NSBundle mainBundle] bundleIdentifier]);
     WriteLog(@"========================================");
 }
