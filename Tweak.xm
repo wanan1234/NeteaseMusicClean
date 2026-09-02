@@ -1,7 +1,6 @@
 // =============================================================
 //  NeteaseMusicClean — 网易云音乐净化插件（诊断版）
-//  功能：打印视图层级，定位底部/顶部 Tab 及首页卡片类名
-//  手势：双指双击弹出菜单，可查看日志
+//  改用三指长按（规避手势拦截）
 // =============================================================
 #import <UIKit/UIKit.h>
 #import <substrate.h>
@@ -92,7 +91,6 @@ static void diagnoseNeteaseMusic(UIViewController *vc) {
 static void diagnoseTabBarController(UIViewController *root) {
     if (!root) return;
 
-    // 查找 UITabBarController
     UITabBarController *tabController = nil;
     if ([root isKindOfClass:[UITabBarController class]]) {
         tabController = (UITabBarController *)root;
@@ -142,8 +140,11 @@ static void showToast(NSString *msg, UIWindow *window) {
 }
 
 static void showSettingsMenu(UIWindow *window) {
+    WriteLog(@"showSettingsMenu called");
     UIViewController *topVC = window.rootViewController;
-    while (topVC.presentedViewController) topVC = topVC.presentedViewController;
+    while (topVC.presentedViewController) {
+        topVC = topVC.presentedViewController;
+    }
 
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"网易云音乐诊断"
                                                                    message:@"点击查看日志"
@@ -167,6 +168,55 @@ static void showSettingsMenu(UIWindow *window) {
 }
 
 // =============================================================
+// Hook UIWindow：三指长按（更可靠，不易被拦截）
+// =============================================================
+%hook UIWindow
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = %orig;
+    if (self) {
+        // 三指长按手势（1.2 秒）
+        UILongPressGestureRecognizer *gesture = [[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(nm_handleLongPress:)];
+        gesture.numberOfTouchesRequired = 3;
+        gesture.minimumPressDuration = 1.2;
+        gesture.allowableMovement = 30;
+        gesture.cancelsTouchesInView = NO;
+        [self addGestureRecognizer:gesture];
+        WriteLog(@"三指长按手势已添加");
+    }
+    return self;
+}
+
+%new
+- (void)nm_handleLongPress:(UILongPressGestureRecognizer *)gesture {
+    if (gesture.state != UIGestureRecognizerStateBegan) return;
+    WriteLog(@"三指长按触发");
+
+    // 触觉反馈
+    if (@available(iOS 10.0, *)) {
+        UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+        [generator prepare];
+        [generator impactOccurred];
+    }
+
+    // 屏幕闪白视觉反馈
+    UIView *flashView = [[UIView alloc] initWithFrame:self.bounds];
+    flashView.backgroundColor = [UIColor whiteColor];
+    flashView.alpha = 0.15;
+    flashView.userInteractionEnabled = NO;
+    [self addSubview:flashView];
+    [UIView animateWithDuration:0.3 animations:^{
+        flashView.alpha = 0;
+    } completion:^(BOOL finished) {
+        [flashView removeFromSuperview];
+    }];
+
+    showSettingsMenu(self);
+}
+
+%end
+
+// =============================================================
 // Hook 主控制器
 // =============================================================
 %hook UIViewController
@@ -182,7 +232,6 @@ static void showSettingsMenu(UIWindow *window) {
             WriteLog(@"Bundle ID: %@", [[NSBundle mainBundle] bundleIdentifier]);
             WriteLog(@"========================================");
 
-            // 诊断根视图
             UIWindow *window = [UIApplication sharedApplication].windows.firstObject;
             if (window && window.rootViewController) {
                 diagnoseTabBarController(window.rootViewController);
@@ -192,32 +241,6 @@ static void showSettingsMenu(UIWindow *window) {
     });
 }
 
-%end
-
-// =============================================================
-// Hook UIWindow：双指双击
-// =============================================================
-%hook UIWindow
-- (instancetype)initWithFrame:(CGRect)frame {
-    self = %orig;
-    if (self) {
-        UITapGestureRecognizer *gesture = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(nm_handleDoubleTap:)];
-        gesture.numberOfTouchesRequired = 2;
-        gesture.numberOfTapsRequired = 2;
-        [self addGestureRecognizer:gesture];
-        WriteLog(@"双指双击手势已添加");
-    }
-    return self;
-}
-%new
-- (void)nm_handleDoubleTap:(UITapGestureRecognizer *)gesture {
-    if (gesture.state == UIGestureRecognizerStateRecognized) {
-        if (@available(iOS 10.0, *)) {
-            [[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium] impactOccurred];
-        }
-        showSettingsMenu(self);
-    }
-}
 %end
 
 // =============================================================
